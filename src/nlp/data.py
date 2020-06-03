@@ -10,13 +10,14 @@ import os
 __any__ = ["build_vocabulary", "ClassesDataset"]
 
 
+PAD_TOKEN = "<PAD>"
 UNK_TOKEN = "<UNK>"
 
 
 def build_vocabulary(texts: Iterable[List[str]]) -> Dict[str, int]:
     """A vocabulary is a dictionary that maps strings onto token IDs."""
-    vocab = {UNK_TOKEN: 0}
-    i = 1
+    vocab = {PAD_TOKEN: 0, UNK_TOKEN: 1}
+    i = 2
     for line in texts:
         for word in line:
             if word not in vocab:
@@ -29,12 +30,18 @@ def build_vocabulary(texts: Iterable[List[str]]) -> Dict[str, int]:
 class _ClassesDataset(Dataset):
     """This is a simple torch Dataset over a text file."""
 
-    def __init__(self, src: str, vocab: Optional[Dict] = None):
+    def __init__(self, src: str, vocab: Optional[Dict] = None, onehot: bool = True):
         self.docs = self.read_txt_file(src)
         self.vocab = vocab if vocab else build_vocabulary(x for x, _ in self.docs)
+        self.onehot = onehot
 
     def __getitem__(self, index) -> Tuple[Tensor, Tensor]:
         x, y = self.docs[index]
+        if not self.onehot:
+            _x = torch.tensor(
+                [self.vocab[w] if w in self.vocab else self.vocab[UNK_TOKEN] for w in x]
+            ).type(torch.LongTensor)
+            return _x, y
         xvec = torch.zeros(len(self.vocab))
         for w in x:
             i = self.vocab[w] if w in self.vocab else self.vocab[UNK_TOKEN]
@@ -60,8 +67,12 @@ class _ClassesDataset(Dataset):
 class ClassesDataset:
     """The ClassesDataset wraps the full example data."""
 
-    def __init__(self, srcdir: str):
-        self.train = _ClassesDataset(os.path.join(srcdir, "train.txt"))
+    def __init__(self, srcdir: str, onehot: bool = True):
+        self.train = _ClassesDataset(os.path.join(srcdir, "train.txt"), onehot=onehot)
         # NB: dev and test share train's vocab
-        self.dev = _ClassesDataset(os.path.join(srcdir, "dev.txt"), self.train.vocab)
-        self.test = _ClassesDataset(os.path.join(srcdir, "test.txt"), self.train.vocab)
+        self.dev = _ClassesDataset(
+            os.path.join(srcdir, "dev.txt"), self.train.vocab, onehot=onehot
+        )
+        self.test = _ClassesDataset(
+            os.path.join(srcdir, "test.txt"), self.train.vocab, onehot=onehot
+        )
